@@ -17,9 +17,8 @@ typedef struct _DR7 {
 	unsigned RW3 : 2; unsigned LEN3 : 2;
 } DR7, * PDR7;
 
-//断点类型
-enum BreakFlag
-{
+//断BYTE点类型	  
+enum BreakFlag{ 
 	CcFlag,HdFlag,Mem
 };
 
@@ -57,12 +56,17 @@ public:
 	BOOL IssystemBp = TRUE;
 
 
-	////是否需要显示汇编 和接收输入  (默认需要输出汇编信息和接收用户输入)
-	//BOOL IsInputAndShowAsm = TRUE;
+	//是否需要显示汇编 和接收输入  (默认需要输出汇编信息和接收用户输入)
+	BOOL IsInputAndShowAsm = TRUE;
 
-	////标记是否需要修改内存页属性
-	//bool IsSetMen = false;
+	//标记是否需要再次下断点
+	BOOL IsRepar = FALSE;
 
+	//标记只在下硬件断点之后修复一次 
+	BOOL IsHPBreak=TRUE;
+
+	//标记我自己按了TF
+	BOOL IsTF = FALSE;
 
 
 	//保存调试时间的进程 线程句柄
@@ -117,6 +121,12 @@ public:
 
 	//修复硬件断点
 	BOOL ReparBreakHD();
+
+	//内存断点
+	BOOL SetMemBreak(DWORD c_Address);
+
+	//修复内存断点
+	BOOL ReparMemBreak();
 
 	//再次下断点
 	BOOL ReparSetBreak();

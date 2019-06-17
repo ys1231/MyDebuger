@@ -130,7 +130,6 @@ void Debug::PrintIcon()
 
 }
 
-//提升为调试权限
 BOOL Debug::PromotionDebugPrivilege(BOOL fEnable)
 {
 	BOOL fOk = FALSE;    HANDLE hToken;
@@ -163,6 +162,7 @@ BOOL Debug::Open(char FilePath[])
 	//创建失败返回假
 	if(!ret)
 	{
+		MessageBox(0, "创建进程失败!", "错误提示", 0);
 		return FALSE;
 	}
 
@@ -229,9 +229,8 @@ VOID Debug::WaitForEvent()
 
 
 		//再把断点设下去
-		ReparSetBreak();
-
-
+		//ReparSetBreak();
+	
 		//关闭打开的线程进程句柄
 		CloseHandle(m_hProc);
 
@@ -277,16 +276,38 @@ VOID Debug::FilterException()
 		//硬件断点 4个 单步异常
 	case EXCEPTION_SINGLE_STEP:
 	{
-		//确认是否是我们自己下的断点 
-		//修改寄存器为不执行此断点
+		IsInputAndShowAsm = TRUE;
 
-			ReparBreakHD();
+		if (!IsTF) {
+
+			IsHPBreak = FALSE;
+
+			for (auto& i : m_BreakPointAll) {
+				if ((DWORD)m_ExcepInfo.ExceptionAddress == i.Address && i.BreakType == HdFlag) {
+
+					//如果异常地址相同说明需要修复
+					ReparBreakHD();
+
+				}
+				else
+					IsHPBreak = TRUE;
+			}
+			//再次下所有断点
+			if (IsRepar && IsHPBreak) {
+				ReparSetBreak();
+				IsInputAndShowAsm = FALSE;
+				IsRepar = FALSE;
+			}
+		}
+		else
+			IsTF = FALSE;
 
 		break;
 	}
 		//访问没有权限的虚拟地址 内存断点
 	case EXCEPTION_ACCESS_VIOLATION:
 
+		ReparMemBreak();
 
 		break;
 	default:
@@ -294,30 +315,33 @@ VOID Debug::FilterException()
 		break;
 	}
 
+	if (IsInputAndShowAsm) {
 		//显示反汇编
 		ShowAsm();
 
 		//等待用户输入
 		GetCommand();
+	}
 
-	return ;
+	return ;      
 }
 
 VOID Debug::ShowAsm()
 {
-
 	//显示寄存器信息
 	CONTEXT ct = {};
 
 	//获取全部寄存器信息
 	ct.ContextFlags = CONTEXT_ALL;
 
+	PEFLAGS PEflags = (PEFLAGS)&ct.EFlags;
+
 	GetThreadContext(m_hThre, &ct);
 
 	//输出到显示屏上
-	printf("-----------------------------------------------------\n");
-	printf("|Eax:%08X Ecx:%08X Edx:%08X Ebx:%08X|\n", ct.Eax, ct.Ecx, ct.Edx, ct.Ebx);
-	printf("|Esp:%08X Ebp:%08X Esi:%08X Edi:%08X|\n",ct.Esp,ct.Ebp,ct.Esi,ct.Edi);
+	printf("-----------------------寄存器-------------------------");						printf("-----------------EFlags-----------------------\n");
+	printf("|Eax:%08X Ecx:%08X Edx:%08X Ebx:%08X|\t", ct.Eax, ct.Ecx, ct.Edx, ct.Ebx);		printf("ZF %d  PF %d  AF %d  OF %d  SF %d\n",PEflags->ZF,PEflags->PF,PEflags->AF,PEflags->OF,PEflags->SF);
+	printf("|Esp:%08X Ebp:%08X Esi:%08X Edi:%08X|\t", ct.Esp, ct.Ebp, ct.Esi, ct.Edi);		printf("DF %d  CF %d  TF %d  IF %d  \n",PEflags->DF,PEflags->CF,PEflags->TF,PEflags->IF);
 	printf("             |EIP:");
 	SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), 0xC);
 	printf("%08X\n\n", ct.Eip);
@@ -413,7 +437,16 @@ VOID Debug::GetCommand()
 		if(!_stricmp("t", cmd))			//单步执行断点
 		{
 			SetBreakTF();
+			IsTF = TRUE;
 			break;
+		}
+		else if (!_stricmp("g", cmd)) {
+
+			break;
+		}
+		else if (!_stricmp("cls", cmd))
+		{
+			system("cls");
 		}
 		else if (!_stricmp("bp", cmd))	//软件断点
 		{
@@ -445,6 +478,11 @@ VOID Debug::GetCommand()
 			}
 			SetBreakHD(Address,c_Type,c_Len);
 		}
+		else if (!_stricmp("np", cmd))
+		{
+			scanf("%X",&Address);
+			SetMemBreak(Address);
+		}
 		else if(!_stricmp("fp", cmd))
 		{
 			//查看所有断点
@@ -454,18 +492,13 @@ VOID Debug::GetCommand()
 		{
 			scanf("%X",&Address);
 			ClearBreak(Address);
+
 		}
 		else if(!_stricmp("xasm",cmd))
 		{
 			AlterAsm();
 		}
-		else if (!_stricmp("g", cmd)) {
-			break;
-		}
-		else if(!_stricmp("cls",cmd))
-		{
-			system("cls");
-		}
+		
 		else
 			printf("Input Error\n");
 
@@ -596,7 +629,6 @@ BOOL Debug::SetBreakTF()
 	return TRUE;
 }
 
-// 设置int3
 BOOL Debug::SetBreakInt3(DWORD c_Address)
 {
 
@@ -641,6 +673,7 @@ BOOL Debug::SetBreakInt3(DWORD c_Address)
 	//把原来的内存属性还原回去
 	VirtualProtectEx(m_hProc, (LPVOID)c_Address, 1, old, &old);
 
+
 	m_BreakPointAll.push_back(bp);
 
 	return TRUE;
@@ -683,6 +716,10 @@ BOOL Debug::ReparBreak()
 			ct.Eip--;
 			SetThreadContext(m_hThre, &ct);
 
+			//TF 断下来以后需要 再次下断点
+			IsRepar = TRUE;
+			SetBreakTF();
+			IsInputAndShowAsm = TRUE;
 			return TRUE;
 		}
 
@@ -762,6 +799,9 @@ BOOL Debug::SetBreakHD(DWORD c_Address, DWORD c_Type, DWORD c_Len)
 		return FALSE;
 	}
 
+
+	//标记需要修复一次硬件断点
+	//IsHPBreak = TRUE;
 	m_BreakPointAll.push_back(HdInfo);
 
 	return TRUE;
@@ -773,70 +813,46 @@ BOOL Debug::ReparBreakHD()
 		// 如果是硬件断点就先设为无效
 		if (i.BreakType == HdFlag && i.Address == (DWORD)m_ExcepInfo.ExceptionAddress)
 		{
-		//打开线程句柄
-		//HANDLE l_hThread = OpenThread(THREAD_ALL_ACCESS, FALSE,m_hThre);
+			//打开线程句柄
+			//HANDLE l_hThread = OpenThread(THREAD_ALL_ACCESS, FALSE,m_hThre);
 
-		// 获取到调试寄存器
-		CONTEXT Context = { CONTEXT_DEBUG_REGISTERS };
-		GetThreadContext(m_hThre, &Context);
+			// 获取到调试寄存器
+			CONTEXT Context = { CONTEXT_DEBUG_REGISTERS };
+			GetThreadContext(m_hThre, &Context);
 
-		// 获取 Dr7 寄存器
-		PDR7 Dr7 = (PDR7)& Context.Dr7;
+			// 获取 Dr7 寄存器
+			PDR7 Dr7 = (PDR7)& Context.Dr7;
 
-		//// 根据 Dr6 的低 4 位知道是谁被触发了
-		//int index = Context.Dr6 & 0xF;
+			//// 根据 Dr6 的低 4 位知道是谁被触发了
+			//int index = Context.Dr6 & 0xF;
 
 
-		// 将触发的断点设置成无效的
+			// 将触发的断点设置成无效的
 
-		if(Context.Dr0==i.Address)
-		{
-			Dr7->L0 = 0;
-		}else if(Context.Dr1 == i.Address)
-		{
-			Dr7->L1 = 0;
-		}
-		else if (Context.Dr2 == i.Address)
-		{
-			Dr7->L2 = 0;
-		}
-		else if (Context.Dr3 == i.Address)
-		{
-			Dr7->L3 = 0;
-		}
-			
-		/*	switch ()
-		{
-		case 1: {
+			if(Context.Dr0==i.Address)
+			{
+				Dr7->L0 = 0;
+			}else if(Context.Dr1 == i.Address)
+			{
+				Dr7->L1 = 0;
+			}
+			else if (Context.Dr2 == i.Address)
+			{
+				Dr7->L2 = 0;
+			}
+			else if (Context.Dr3 == i.Address)
+			{
+				Dr7->L3 = 0;
+			}
+	
+			// 将修改更新到线程
+			if (!SetThreadContext(m_hThre, &Context))
+			{
+				PutsError("设置线程上下文失败");
 
-			i.Execute = TRUE;
-			Dr7->L0 = 0;
-			break; 
-		}
-		case 2: {
-			Dr7->L1 = 0;
-			i.Execute = TRUE;
-			break;
-		}
-		case 4: {
-			Dr7->L2 = 0;
-			i.Execute = TRUE;
-			break;
-		}
-		case 8: {
-			Dr7->L3 = 0;
-			i.Execute = TRUE;
-			break;
-		}
-		}*/
-
-		// 将修改更新到线程
-		if (!SetThreadContext(m_hThre, &Context))
-		{
-			PutsError("设置线程上下文失败");
-
-		}
-
+			}
+			IsRepar = TRUE;
+			SetBreakTF();
 		//CloseHandle(l_hThread);
 		}
 	}
@@ -844,11 +860,74 @@ BOOL Debug::ReparBreakHD()
 	return 1;
 }
 
+BOOL Debug::SetMemBreak(DWORD c_Address)
+{
+	BreakPoint bp = {c_Address,0,Mem,TRUE };
+
+	//修改内存属性为
+	if (!VirtualProtectEx(m_hProc, (LPVOID)c_Address, 1, PAGE_NOACCESS, &bp.OldData))
+	{
+		PutsError("修改内存分页属性失败");
+		return FALSE;
+	}
+	m_BreakPointAll.push_back(bp);
+
+	return TRUE;
+}
+
+BOOL Debug::ReparMemBreak()
+{
+	//判断是否是我们下的内存断点   
+
+	for (auto& i : m_BreakPointAll) {
+
+		// 先筛选出内存断点
+		if (i.BreakType == Mem) {
+
+			//再判断是否在这一页内存上不是直接恢复属性 下TF断点
+			if ((((DWORD)m_ExcepInfo.ExceptionInformation[1] & 0xFFFFF000)) == (i.Address & 0xFFFFF000))
+			{
+				DWORD ret = 0;
+				if (!VirtualProtectEx(m_hProc, (LPVOID)i.Address, 1, i.OldData, &ret))
+				{
+					PutsError("修改内存分页属性失败");
+					return FALSE;
+				}
+
+				IsInputAndShowAsm = FALSE;
+
+				// 如果断在了我们下断点的地址 说明我们需要接收用户输入
+				if ((DWORD)m_ExcepInfo.ExceptionInformation[1] == i.Address)
+				{
+					//命中内存断点 需要接收用户输入
+					IsInputAndShowAsm = TRUE;
+
+				}
+				
+
+					SetBreakTF();
+					IsRepar = TRUE;
+				
+			}
+			
+			
+		}
+	}
+
+
+	return TRUE;
+}
+
+
+
 BOOL Debug::ReparSetBreak()
 {
 
 	for (auto& i : m_BreakPointAll)
 	{
+		//已经再次下断点不需要重复执行
+		IsRepar = FALSE;
+
 		// 如果是软件断点就把\xCC写回去
 		if (i.BreakType == CcFlag && i.Execute)
 		{
@@ -922,7 +1001,19 @@ BOOL Debug::ReparSetBreak()
 			}
 		}
 
+		else if (i.BreakType == Mem&&i.Execute) {
+			
+				DWORD ret = {};
+				//修改内存属性为
+				if (!VirtualProtectEx(m_hProc, (LPVOID)i.Address, 1, PAGE_NOACCESS, &ret))
+				{
+					PutsError("修改内存分页属性失败");
 
+					return FALSE;
+				}
+				
+			
+		}
 	}
 	return TRUE;
 }
@@ -940,6 +1031,7 @@ BOOL Debug::ClearBreak(DWORD c_Address)
 			eflag = true;
 			printf("删除成功\n");
 			break;
+
 		}
 		else
 			eflag = false;
@@ -1019,7 +1111,7 @@ BOOL Debug::ClearBreak(DWORD c_Address)
 					
 				}
 			}
-
+			iter++;
 		}
 
 	}
