@@ -20,6 +20,9 @@
 #pragma comment(lib,"BeaEngine_4.1/Win32/Lib/BeaEngine.lib")
 
 
+//初始化 静态成员变量
+MyContext Debug::m_Myct = {};
+char Debug::m_str[10] = {};
 
 //翻译错误信息
 char* GetError()
@@ -193,7 +196,7 @@ VOID Debug::WaitForEvent()
 
 					//调用过滤函数
 					FilterException();
-
+		
 					break;
 				}
 			case CREATE_THREAD_DEBUG_EVENT:
@@ -214,6 +217,7 @@ VOID Debug::WaitForEvent()
 				}
 			case LOAD_DLL_DEBUG_EVENT:
 				printf("DLL加载\n");
+				//m_dbgEvent;
 				break;
 			case UNLOAD_DLL_DEBUG_EVENT:
 				printf("DLL卸载\n");
@@ -265,6 +269,7 @@ VOID Debug::FilterException()
 		{
 			IssystemBp = false;
 			printf("到达系统断点:%08X\n",(DWORD)m_ExcepInfo.ExceptionAddress);
+			GetHelp();
 		}else
 		{
 			//确认是否是我们自己下的断点 
@@ -378,6 +383,7 @@ VOID Debug::ShowAsm()
 	while (nCount <= 10)
 	{
 		int nLen = Disasm(&disasm);
+
 		if (nLen == -1) {
 			break;
 		}
@@ -387,7 +393,7 @@ VOID Debug::ShowAsm()
 		for (int i = 0; i < nLen; ++i) {
 			printf("%02X", (DWORD) * (BYTE*)(disasm.EIP + i));
 		}
-		printf("%*c", 20 - nLen * 2, ' ');
+		printf("%*c", 18 - nLen * 2, ' ');
 
 		//不同的命令不同的颜色
 		if (!strncmp("push", disasm.CompleteInstr, 4))
@@ -466,7 +472,7 @@ VOID Debug::ShowAsm(DWORD c_Address, DWORD c_Len)
 		for (int i = 0; i < nLen; ++i) {
 			printf("%02X", (DWORD) * (BYTE*)(disasm.EIP + i));
 		}
-		printf("%*c", 20 - nLen * 2, ' ');
+		printf("%*c", 18 - nLen * 2, ' ');
 
 		//不同的命令不同的颜色
 		if (!strncmp("push", disasm.CompleteInstr, 4))
@@ -518,9 +524,17 @@ VOID Debug::GetCommand()
 			SetBreakTF();
 			IsTF = TRUE;
 			break;
+		}else if(!_stricmp("tg",cmd))
+		{
+			if(!SetStepTF())
+			{
+				printf("单步失败 !");
+			}
+			else
+				break;
 		}
 		else if (!_stricmp("g", cmd)) {
-
+			
 			break;
 		}
 		else if (!_stricmp("cls", cmd))
@@ -532,9 +546,8 @@ VOID Debug::GetCommand()
 			scanf("%X %d", &Address, &c_Len);
 			ShowAsm(Address, c_Len);
 		}
-		else if (!_stricmp("bp", cmd))	//软件断点
+		else if (!_stricmp("bp", cmd))	//软件断点  
 		{
-
 			scanf("%X",&Address);		//接收用户输入地址
 
 			SetBreakInt3(Address);		//传入函数开始下软件断点
@@ -549,11 +562,13 @@ VOID Debug::GetCommand()
 				c_Type = 0; c_Len = 0;
 			}else if(!_stricmp(str, "-r"))
 			{
-				c_Type = 3; scanf("%d", &c_Len);
+				c_Type = 1; 
+				scanf("%d", &c_Len);
 			}
 			else if (!_stricmp(str, "-w"))
 			{
-				c_Type = 1; scanf("%d", &c_Len);
+				c_Type = 3; 
+				scanf("%d", &c_Len);
 			}
 			else {
 				printf("Input Error\n");
@@ -564,8 +579,13 @@ VOID Debug::GetCommand()
 		}
 		else if (!_stricmp("np", cmd))	//下内存断点
 		{
-			scanf("%X",&Address);
-			SetMemBreak(Address);
+			scanf("%X%s", &Address, str);
+			SetMemBreak(Address,str);
+		}
+		else if(!_stricmp("bpt",cmd))
+		{
+			scanf("%X", &Address);
+			SetBreakInt3(Address, true, true);
 		}
 		else if(!_stricmp("fp", cmd))	//查看所有断点
 		{
@@ -602,6 +622,9 @@ VOID Debug::GetCommand()
 		}else if(!_stricmp("fmd",cmd))
 		{
 			GetModuleList();
+		}else if(!_stricmp("h",cmd))
+		{
+			GetHelp();
 		}
 		else
 			printf("Input Error\n");
@@ -613,6 +636,28 @@ VOID Debug::GetCommand()
 
 
 	return;
+}
+
+VOID Debug::GetHelp()
+{
+	printf("t:   单步步入\n");
+	printf("tg:  单步步过\n");
+	printf("g:   继续执行\n");
+	printf("cls: 清屏\n");
+	printf("fasm:地址 查看指定地址汇编信息\n");
+	printf("bp:   软件断点|| 条件断点 (1) \n");
+	printf("hp:   -x|-r n |-w n 执行 读|写\n");
+	printf("np:   -x|-r |-w  内存断点\n");
+	printf("fp:  查看所有断点\n");
+	printf("dp:  地址 删除指定断点和查看配合使用\n");
+	printf("xasm:修改汇编代码\n");
+	printf("fm:  地址 查看内存数据(默认16个字节)\n");
+	printf("xm:  地址 修改内存数据\n");
+	printf("fz:  (n)查看栈\n");
+	printf("xr:  修改寄存器\n");
+	printf("fmd: 查看模块信息\n");
+
+	return ;
 }
 
 VOID Debug::FindBreak()
@@ -697,12 +742,12 @@ VOID Debug::ShowStack(const DWORD Size)
 
 		ReadProcessMemory(m_hProc, EspAddres,& (l_stack[i]),4, &size);
 
-	printf("%08X:%08X\t", ct.Esp, l_stack[i]);
+	printf("%08X:%08X\t", EspAddres, l_stack[i]);
 
 	if (!((i + 1) % 2))
 		printf("\n");
 
-	EspAddres+=4;
+	EspAddres++;
 	}
 	printf("\n");
 
@@ -719,7 +764,7 @@ VOID Debug::AlterRegister()
 	char str[10] = {};
 	DWORD l_dword = 0;
 
-	printf("Input\n:");
+	printf("Input Addres|n\n:");
 	aaa:
 	scanf("%s%d", str,&l_dword);
 
@@ -786,6 +831,14 @@ VOID Debug::GetModuleList()
 	return ;
 }
 
+VOID Debug::Analysis_Export_Import()
+{
+
+
+
+	return ;
+}
+
 VOID Debug::ShowMem(DWORD c_Address)
 {
 	//临时变量
@@ -815,6 +868,7 @@ VOID Debug::ShowMem(DWORD c_Address)
 			printf("\n");
 	}
 	printf("\n");
+	printf("%S\t%s\n", l_Mem,l_Mem);
 	//把原来的内存属性还原回去
 	VirtualProtectEx(m_hProc, (LPVOID)c_Address, 1, Oldproperty, &Oldproperty);
 
@@ -843,7 +897,7 @@ VOID Debug::AlterAsm()
 		printf("指令：");
 		gets_s(xed.instr, XEDPARSE_MAXBUFSIZE);
 
-		if (!strcmp(xed.instr,"0"))
+		if (!strcmp(xed.instr,"exit"))
 			break;
 
 		// xed.cip, 汇编带有跳转偏移的指令时,需要配置这个字段
@@ -864,7 +918,7 @@ VOID Debug::AlterAsm()
 			return;
 		}
 
-		//写入CC 下软件断点
+		
 		if (!WriteProcessMemory(m_hProc, (LPVOID)xed.cip, xed.dest, xed.dest_size, &ret)) {
 			PutsError("写入汇编失败");
 
@@ -913,7 +967,64 @@ BOOL Debug::SetBreakTF()
 	return TRUE;
 }
 
-BOOL Debug::SetBreakInt3(DWORD c_Address)
+BOOL Debug::SetStepTF()
+{
+
+	BreakPoint bp;
+
+	//显示返汇编信息
+	char buff[1 * 15] = {};
+	SIZE_T ret = 0;
+
+	//读取内存中的机器码
+	if (!ReadProcessMemory(m_hProc, (LPVOID)m_ExcepInfo.ExceptionAddress, buff, sizeof(buff), &ret))
+	{
+		PutsError("读取进程内存失败");
+		return FALSE;
+	}
+
+	//使用反汇编引擎输出反汇编信息
+	DISASM disasm = {};
+
+	//设置要进行反汇编的Opcode的内存地址
+	disasm.EIP = (UIntPtr)buff;
+
+	//设置当前指令所在地址
+	disasm.VirtualAddr = (UInt64)m_ExcepInfo.ExceptionAddress;	//异常地址
+
+	//设置按照32位汇编机器码进行反汇编
+	disasm.Archi = 0;
+
+	
+
+
+	int nLen = Disasm(&disasm);
+	if (nLen == -1) {
+		return FALSE;
+	}
+
+	//过滤call
+
+	if (!strncmp("call", disasm.CompleteInstr, 4)|| !strncmp("rep", disasm.CompleteInstr, 3)) {
+	
+		//是call
+		SetBreakInt3(disasm.VirtualAddr + nLen, false);
+	}
+	else {
+		//不是call 说明不需要步过 直接单步执行
+		SetBreakTF();
+
+		//说明是我们自己下的TF 硬件断点
+		IsTF = TRUE;
+	}
+	//disasm.EIP + nLen;
+	//disasm.VirtualAddr + nLen;
+	
+	//成功返回真
+	return TRUE;
+}
+
+BOOL Debug::SetBreakInt3(DWORD c_Address,bool c_Execute, bool c_CondiTion)
 {
 
 	for(auto&i:m_BreakPointAll)
@@ -925,8 +1036,50 @@ BOOL Debug::SetBreakInt3(DWORD c_Address)
 		}
 	}
 
+	//判断一下这是不是一个条件断点 如果是条件断点就应该
+	if(c_CondiTion)
+	{
+		printf("请选择设置条件:(1.执行次数|2.某个寄存器的值):");
+
+		scanf("%d", &IsConDitionType);
+
+		if (IsConDitionType == 1) {
+
+			printf("请输入最大执行次数\n:");
+			scanf("%d", &IsConDiTion);
+
+		}else if(IsConDitionType==2)
+		{
+			
+			//接收用户输入的寄存器
+			
+			DWORD l_dword = 0;
+
+			printf("Input Addres|n\n:");
+		aaa:
+			scanf("%s%d", m_str, &l_dword);
+
+			if (!_stricmp("Eax", m_str))
+				m_Myct.Eax = l_dword;
+			else if (!_stricmp("Ecx", m_str))
+				m_Myct.Ecx = l_dword;
+			else if (!_stricmp("Edx", m_str))
+				m_Myct.Edx = l_dword;
+			else if (!_stricmp("Ebx", m_str))
+				m_Myct.Ebx = l_dword;
+			else if (!_stricmp("Esi", m_str))
+				m_Myct.Esi = l_dword;
+			else if (!_stricmp("Edi", m_str))
+				m_Myct.Edi = l_dword;
+			else {
+				printf("没有设置这个寄存器\n请重新输入\n:");
+				goto aaa;
+			}
+		}
+	}
+
 	//保存断点信息 
-	BreakPoint bp ={c_Address,0,CcFlag ,TRUE};
+	BreakPoint bp ={c_Address,0,CcFlag ,c_Execute,0,c_CondiTion };
 
 	//临时变量
 	SIZE_T size = {};
@@ -1003,7 +1156,87 @@ BOOL Debug::ReparBreak()
 			//TF 断下来以后需要 再次下断点
 			IsRepar = TRUE;
 			SetBreakTF();
-			IsInputAndShowAsm = TRUE;
+
+			static DWORD CondiTionLen = 0;
+
+			
+
+			//如果为真说明这是一个条件断点
+			if(i.IsCondition)
+			{	
+				if (IsConDitionType == 1) {
+					//只要断到这个断点  计数器就+1
+					CondiTionLen++;
+
+					//如果命中次数与设置的执行次数相同 
+					if (CondiTionLen == IsConDiTion)
+					{
+						//说明 需要接收用户处理
+						IsInputAndShowAsm = TRUE;
+
+						//说明 断点目的已经达到 不需要再次下断点
+						i.Execute = FALSE;
+					}
+					else
+						IsInputAndShowAsm = FALSE;
+				}else if(IsConDitionType==2)
+				{
+
+					//获取线程上下文并设置TF 标志位
+					CONTEXT ct = { CONTEXT_ALL };
+
+					//获取线程上下文
+					if (!GetThreadContext(m_hThre, &ct))
+					{
+						PutsError("获取线程上下文失败");
+						return FALSE;
+					}
+					bool l_cond=false;
+					
+					if (!_stricmp("Eax", m_str))
+						if (m_Myct.Eax == ct.Eax)
+							l_cond = true;
+					else if (!_stricmp("Ecx", m_str))
+						if(m_Myct.Ecx ==ct.Ecx)
+							l_cond = true;
+					else if (!_stricmp("Edx", m_str))
+						if (m_Myct.Edx == ct.Edx)
+							l_cond = true;
+					else if (!_stricmp("Ebx", m_str))
+						if(m_Myct.Ebx == ct.Ebx)
+							l_cond = true;
+					else if (!_stricmp("Esi", m_str))
+						if (m_Myct.Esi == ct.Esi)
+							l_cond = true;
+					else if (!_stricmp("Edi", m_str))
+						if (m_Myct.Edi == ct.Edi)
+							l_cond = true;
+
+
+
+					if(l_cond)
+					{
+						//说明 需要接收用户处理
+						IsInputAndShowAsm = TRUE;
+
+						//说明 断点目的已经达到 不需要再次下断点
+						i.Execute = FALSE;
+
+						//此时需要初始化 自己的
+						m_Myct.Eax = 0;
+						m_Myct.Ecx = 0;
+						m_Myct.Edx = 0;
+						m_Myct.Ebx = 0;
+						m_Myct.Esi = 0;
+						m_Myct.Edi = 0;
+
+					}
+					else
+						IsInputAndShowAsm = FALSE;
+				}
+			}else
+				IsInputAndShowAsm = TRUE;
+
 			return TRUE;
 		}
 
@@ -1017,10 +1250,20 @@ BOOL Debug::ReparBreak()
 
 BOOL Debug::SetBreakHD(DWORD c_Address, DWORD c_Type, DWORD c_Len)
 {
+	
+	//对断点长度进行处理
+	if(c_Len==1)
+	{
+		c_Address -= c_Address % 2;
+	}else if(c_Len==3)
+	{
+		c_Address -= c_Address % 4;
+	}
+	
 	// 调试寄存器 Dr0-DR7 
 
 	// 用于保存原来内存的数据
-	BreakPoint HdInfo = { c_Address,0,HdFlag,TRUE};
+	BreakPoint HdInfo = { c_Address,0,HdFlag,TRUE,0};
 
 	// 获取调试寄存器
 	CONTEXT ct = { CONTEXT_DEBUG_REGISTERS };
@@ -1073,7 +1316,7 @@ BOOL Debug::SetBreakHD(DWORD c_Address, DWORD c_Type, DWORD c_Len)
 	}
 	else
 	{
-		PutsError("设硬件断点失败");
+		PutsError("硬件断点已经有4个了");
 		return false;
 	}
 
@@ -1137,19 +1380,37 @@ BOOL Debug::ReparBreakHD()
 			}
 			IsRepar = TRUE;
 			SetBreakTF();
-		//CloseHandle(l_hThread);
+
+
 		}
 	}
 
 	return 1;
 }
 
-BOOL Debug::SetMemBreak(DWORD c_Address)
+BOOL Debug::SetMemBreak(DWORD c_Address,char str[])
 {
 	BreakPoint bp = {c_Address,0,Mem,TRUE };
+	
+	DWORD c_Type = PAGE_NOACCESS;
 
+	if (!_stricmp(str, "-x")) {
+		c_Type = PAGE_EXECUTE;
+	}
+	else if (!_stricmp(str, "-r"))
+	{
+		c_Type = PAGE_READONLY;
+	}
+	else if (!_stricmp(str, "-w"))
+	{
+		c_Type = PAGE_READWRITE;
+	}
+	else {
+		c_Type = PAGE_NOACCESS;
+	}
+	bp.MemClas = c_Type;
 	//修改内存属性为
-	if (!VirtualProtectEx(m_hProc, (LPVOID)c_Address, 1, PAGE_NOACCESS, &bp.OldData))
+	if (!VirtualProtectEx(m_hProc, (LPVOID)c_Address, 1, c_Type, &bp.OldData))
 	{
 		PutsError("修改内存分页属性失败");
 		return FALSE;
@@ -1201,8 +1462,6 @@ BOOL Debug::ReparMemBreak()
 
 	return TRUE;
 }
-
-
 
 BOOL Debug::ReparSetBreak()
 {
@@ -1289,7 +1548,7 @@ BOOL Debug::ReparSetBreak()
 			
 				DWORD ret = {};
 				//修改内存属性为
-				if (!VirtualProtectEx(m_hProc, (LPVOID)i.Address, 1, PAGE_NOACCESS, &ret))
+				if (!VirtualProtectEx(m_hProc, (LPVOID)i.Address, 1, i.MemClas, &ret))
 				{
 					PutsError("修改内存分页属性失败");
 
@@ -1313,7 +1572,7 @@ BOOL Debug::ClearBreak(DWORD c_Address)
 		{
 			i.Execute = FALSE;
 			eflag = true;
-			printf("删除成功\n");
+			printf("断点以失效\n");
 			break;
 
 		}
@@ -1325,7 +1584,7 @@ BOOL Debug::ClearBreak(DWORD c_Address)
 		printf("没有找到请重新输入\n:");
 		return FALSE;
 	}
-	printf("断点以失效是否保留(y/n):");
+	printf("断点以失效是否删除(y/n):");
 	getchar();
 	char c = 0;
 	scanf("%c",&c);
@@ -1394,8 +1653,24 @@ BOOL Debug::ClearBreak(DWORD c_Address)
 						//CloseHandle(l_hThread);
 					
 				}
+
+				if(iter->BreakType ==Mem)
+				{
+					//再判断是否在这一页内存上不是直接恢复属性 下TF断点
+					
+					
+					DWORD ret = 0;
+					if (!VirtualProtectEx(m_hProc, (LPVOID)iter->Address, 1, iter->OldData, &ret))
+					{
+						PutsError("删除内存断点失败");
+						return FALSE;
+					}
+					// 从动态数组里面删除
+					iter = m_BreakPointAll.erase(iter);
+
+				}
 			}
-			iter++;
+			
 		}
 
 	}

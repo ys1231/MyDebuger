@@ -22,15 +22,33 @@ enum BreakFlag{
 	CcFlag,HdFlag,Mem
 };
 
+//typedef BOOL(*FUNC)(char* buff);
+
 //保存软件断点的结构体
 typedef struct _BreakPoint {
 	DWORD Address;				  //断点地址
 	DWORD  OldData;				  // 被覆盖调的字节(内存断点是 用于保存旧的属性)
 	BreakFlag BreakType = CcFlag; //默认是软件断点
 	BOOL  Execute = TRUE;		  //断点是否生效
+	DWORD MemClas = PAGE_NOACCESS;//设置内存断点时使用
+
+	//给条件断点使用的
+	BOOL IsCondition = FALSE;
+
+	//是否是条件断点 
+	//如果是条件断点  判断一下 是否满足条件 如果满足条件 接收用户输入(把断点设置为失效) 不满足不接收
 	
+
 }BreakPoint,*PBreakPoint;
 
+typedef struct _MyContext{
+	DWORD Eax=0;
+    DWORD Ecx=0;
+	DWORD Edx=0;
+	DWORD Ebx=0;
+	DWORD Esi=0;
+	DWORD Edi=0;
+}MyContext,PMyContext;
 
 class Debug
 {
@@ -55,7 +73,6 @@ public:
 	//同于判断是否是系统断点 默认 是
 	BOOL IssystemBp = TRUE;
 
-
 	//是否需要显示汇编 和接收输入  (默认需要输出汇编信息和接收用户输入)
 	BOOL IsInputAndShowAsm = TRUE;
 
@@ -68,13 +85,25 @@ public:
 	//标记我自己按了TF
 	BOOL IsTF = FALSE;
 
-
 	//保存调试时间的进程 线程句柄
 	HANDLE m_hProc;//进程句柄
 	HANDLE m_hThre;//线程句柄
 
 	//用于保存自己下的软件断点 int3
 	std::vector<BreakPoint>m_BreakPointAll;
+
+
+	//设置执行条件断点所需的 数据
+	DWORD IsConDiTion = 0;
+
+	//是什么类型的条件断点
+	DWORD IsConDitionType = 0;
+
+	//保存用户设置的寄存器值 用于判断是否满足条件
+	static MyContext m_Myct;
+
+	//保存用户输入的是哪个寄存器
+	static char m_str[10];
 
 public:
 
@@ -105,9 +134,13 @@ public:
 	//7.获取用户输入信息
 	VOID GetCommand();
 
+	//7.1获取命令帮助
+	VOID GetHelp();
+
 	//8.查看已有的断点
 	VOID FindBreak();
 
+	//查看内存
 	VOID ShowMem(DWORD c_Address);
 
 	//修改内存数据
@@ -122,13 +155,19 @@ public:
 	//遍历模块信息
 	VOID GetModuleList();
 
+	//解析导入导出表
+	VOID Analysis_Export_Import();
+
 public:
 
 	// 单步断点 属于硬件断点
 	BOOL SetBreakTF();
 
+	//单步不过  
+	BOOL SetStepTF();
+
 	// 设置软件断点 (接收用户输入的地址)
-	BOOL SetBreakInt3(DWORD c_Address);
+	BOOL SetBreakInt3(DWORD c_Address,bool c_Execute=true, bool c_CondiTion =false);
 
 	//(修复软件断点)+判断是否是自己下的断点 EIP--  
 	BOOL ReparBreak();
@@ -140,7 +179,7 @@ public:
 	BOOL ReparBreakHD();
 
 	//内存断点
-	BOOL SetMemBreak(DWORD c_Address);
+	BOOL SetMemBreak(DWORD c_Address,char str[]);
 
 	//修复内存断点
 	BOOL ReparMemBreak();
@@ -150,9 +189,10 @@ public:
 
 	//根据标记清理 无效的断点
 	BOOL ClearBreak(DWORD c_Address);
-	
-	//用于删除断点 (修改标志为FALSE)
-	//BOOL SetBreakEffect(DWORD c_Address);
+
+
+
+
 
 };
 
