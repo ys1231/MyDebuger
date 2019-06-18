@@ -96,14 +96,31 @@ public:
 	//6.触发异常显示反汇编
 	VOID ShowAsm();
 
+	//手动调用显示反汇编
+	VOID ShowAsm(DWORD c_Address,DWORD c_Len=10);
+
+	// 修改指定地址汇编代码
+	VOID AlterAsm();
+
 	//7.获取用户输入信息
 	VOID GetCommand();
 
 	//8.查看已有的断点
 	VOID FindBreak();
 
-	// 修改指定地址汇编代码
-	VOID AlterAsm();
+	VOID ShowMem(DWORD c_Address);
+
+	//修改内存数据
+	VOID AlterMem(DWORD c_Address);
+
+	//查看栈数据
+	VOID ShowStack(const DWORD Size);
+
+	//修改寄存器
+	VOID AlterRegister();
+
+	//遍历模块信息
+	VOID GetModuleList();
 
 public:
 

@@ -16,6 +16,7 @@
 #define BEA_ENGINE_STATIC
 #define BEA_USE_STDCALL
 #include"BeaEngine_4.1/Win32/headers/BeaEngine.h"
+#include <TlHelp32.h>
 #pragma comment(lib,"BeaEngine_4.1/Win32/Lib/BeaEngine.lib")
 
 
@@ -419,6 +420,84 @@ VOID Debug::ShowAsm()
 	return ;
 }
 
+VOID Debug::ShowAsm(DWORD c_Address, DWORD c_Len)
+{
+	
+
+	//显示返汇编信息
+	char buff[100 * 15] = {};
+	SIZE_T ret = 0;
+
+	if (c_Len > 100)
+		return;
+
+	//读取内存中的机器码
+	if (!ReadProcessMemory(m_hProc, (LPVOID)c_Address, buff, sizeof(buff), &ret))
+	{
+		PutsError("读取进程内存失败");
+		return;
+	}
+
+	//使用反汇编引擎输出反汇编信息
+	DISASM disasm = {};
+
+	//设置要进行反汇编的Opcode的内存地址
+	disasm.EIP = (UIntPtr)buff;
+
+	//设置当前指令所在地址
+	disasm.VirtualAddr = (UInt64)c_Address;	//异常地址
+
+	//设置按照32位汇编机器码进行反汇编
+	disasm.Archi = 0;
+
+	int nCount = 0;
+
+	//默认字体颜色是白色
+	WORD l_color = 0x7;
+	while (nCount <= c_Len)
+	{
+		int nLen = Disasm(&disasm);
+		if (nLen == -1) {
+			break;
+		}
+
+		printf("%08llX | ", disasm.VirtualAddr);
+
+		for (int i = 0; i < nLen; ++i) {
+			printf("%02X", (DWORD) * (BYTE*)(disasm.EIP + i));
+		}
+		printf("%*c", 20 - nLen * 2, ' ');
+
+		//不同的命令不同的颜色
+		if (!strncmp("push", disasm.CompleteInstr, 4))
+			l_color = 0x1;
+		else if (!strncmp("e", disasm.CompleteInstr, 1))
+			l_color = 0xA;
+		else if (!strncmp("call", disasm.CompleteInstr, 4))
+			l_color = 0x9;
+		else if (!strncmp("ret", disasm.CompleteInstr, 3))
+			l_color = 0x9;
+		else if (!strncmp("j", disasm.CompleteInstr, 1))
+			l_color = 0xE;
+		else if (!strncmp("pop", disasm.CompleteInstr, 3))
+			l_color = 0x1;
+		else
+			l_color = 0x7;
+
+		SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), l_color);
+		printf(" | %s\n", disasm.CompleteInstr);
+
+		//恢复原来的白色
+		SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), 0x7);
+
+		disasm.EIP += nLen;
+		disasm.VirtualAddr += nLen;
+		++nCount;
+	}
+
+	return ;
+}
+
 VOID Debug::GetCommand()
 {
 	//获取用户输入缓冲区
@@ -447,6 +526,11 @@ VOID Debug::GetCommand()
 		else if (!_stricmp("cls", cmd))
 		{
 			system("cls");
+			ShowAsm();
+		}else if(!_stricmp("fasm", cmd))
+		{
+			scanf("%X %d", &Address, &c_Len);
+			ShowAsm(Address, c_Len);
 		}
 		else if (!_stricmp("bp", cmd))	//软件断点
 		{
@@ -478,27 +562,47 @@ VOID Debug::GetCommand()
 			}
 			SetBreakHD(Address,c_Type,c_Len);
 		}
-		else if (!_stricmp("np", cmd))
+		else if (!_stricmp("np", cmd))	//下内存断点
 		{
 			scanf("%X",&Address);
 			SetMemBreak(Address);
 		}
-		else if(!_stricmp("fp", cmd))
+		else if(!_stricmp("fp", cmd))	//查看所有断点
 		{
 			//查看所有断点
 			FindBreak();
 		}
-		else if(!_stricmp("dp",cmd))
+		else if(!_stricmp("dp",cmd))	//删除断点
 		{
 			scanf("%X",&Address);
 			ClearBreak(Address);
 
 		}
-		else if(!_stricmp("xasm",cmd))
+		else if(!_stricmp("xasm",cmd))	//修改汇编
 		{
 			AlterAsm();
+		}else if(!_stricmp("fm",cmd))	//查看内存
+		{
+			scanf("%X", &Address);
+			ShowMem(Address);
 		}
-		
+		else if (!_stricmp("xm", cmd))  //修改内存
+		{
+			scanf("%X", &Address);
+			AlterMem(Address);
+			ShowAsm();
+		}else if(!_stricmp("fz",cmd))
+		{
+			scanf("%d", &c_Len);
+			ShowStack(c_Len);
+		}else if(!_stricmp("xr",cmd))
+		{
+			AlterRegister();
+			ShowAsm();
+		}else if(!_stricmp("fmd",cmd))
+		{
+			GetModuleList();
+		}
 		else
 			printf("Input Error\n");
 
@@ -535,6 +639,186 @@ VOID Debug::FindBreak()
 
 		printf("|Address:%08X|%d|Type:%s\n", i.Address,i.Execute,pType);
 	}
+	return ;
+}
+
+VOID Debug::AlterMem(DWORD c_Address)
+{
+	//临时变量
+	SIZE_T size = {};
+	DWORD Oldproperty = {};
+
+	DWORD str = {};
+
+	//BYTE* l_Mem;
+	//修改调试进程内存属性 
+	if (!VirtualProtectEx(m_hProc, (LPVOID)c_Address, 1, PAGE_READWRITE, &Oldproperty)) {
+		PutsError("设置内存分页属性失败");
+		return;
+	}
+
+	printf(":");
+	scanf("%X",&str);
+
+	//写入CC 下软件断点
+	if (!WriteProcessMemory(m_hProc, (LPVOID)c_Address, &str, 1, &size)) {
+		PutsError("修改内存数据失败");
+
+		//把原来的内存属性还原回去
+		VirtualProtectEx(m_hProc, (LPVOID)c_Address, 1, Oldproperty, &Oldproperty);
+
+		return ;
+	}
+
+	
+	//把原来的内存属性还原回去
+	VirtualProtectEx(m_hProc, (LPVOID)c_Address, 1, Oldproperty, &Oldproperty);
+
+	return;
+}
+
+VOID Debug::ShowStack(const DWORD Size)
+{
+	DWORD size;
+
+	DWORD l_stack[100] = {};
+
+	//显示寄存器信息
+	CONTEXT ct = { CONTEXT_CONTROL };
+
+	//获取当前线程上下文
+	GetThreadContext(m_hThre, &ct);
+
+	DWORD *EspAddres = (DWORD*)ct.Esp;
+
+	if (Size > 100)
+		return;
+	for (int i = 0; i < Size; i++) {
+
+		ReadProcessMemory(m_hProc, EspAddres,& (l_stack[i]),4, &size);
+
+	printf("%08X:%08X\t", ct.Esp, l_stack[i]);
+
+	if (!((i + 1) % 2))
+		printf("\n");
+
+	EspAddres+=4;
+	}
+	printf("\n");
+
+
+	return ;
+}
+
+VOID Debug::AlterRegister()
+{
+	CONTEXT ct = { CONTEXT_ALL };
+	GetThreadContext(m_hThre, &ct);
+
+	//接收用户输入的寄存器
+	char str[10] = {};
+	DWORD l_dword = 0;
+
+	printf("Input\n:");
+	aaa:
+	scanf("%s%d", str,&l_dword);
+
+	if (!_stricmp("Eip", str))
+		ct.Eip = l_dword;
+	else if (!_stricmp("Eax", str))
+		ct.Eax = l_dword;
+	else if (!_stricmp("Ecx", str))
+		ct.Ecx = l_dword;
+	else if (!_stricmp("Edx", str))
+		ct.Edx = l_dword;
+	else if (!_stricmp("Ebx", str))
+		ct.Ebx = l_dword;
+	else if (!_stricmp("Esi", str))
+		ct.Esi = l_dword;
+	else if (!_stricmp("Edi", str))
+		ct.Edi = l_dword;
+	else if (!_stricmp("Esp", str))
+		ct.Esp = l_dword;
+	else if (!_stricmp("Ebp", str))
+		ct.Ebp = l_dword;
+	else {
+		printf("没有找到请重新输入\n:");
+		goto aaa;
+	}
+
+	if(!SetThreadContext(m_hThre, &ct))
+	{
+		PutsError("修改寄存器出错");
+		return;
+	}
+
+	printf("修改完成");
+	return ;
+}
+
+VOID Debug::GetModuleList()
+{
+	setlocale(LC_ALL, "chs");
+
+	HANDLE        hModuleSnap = INVALID_HANDLE_VALUE;
+	MODULEENTRY32 me32 = { sizeof(MODULEENTRY32) };
+	// 1. 创建一个模块相关的快照句柄
+	hModuleSnap = CreateToolhelp32Snapshot(
+		TH32CS_SNAPMODULE,  // 指定快照的类型
+		m_dbgEvent.dwProcessId);            // 指定进程
+	if (hModuleSnap == INVALID_HANDLE_VALUE)
+		return ;
+
+	// 通过模块快照句柄获取第一个模块信息
+	if (!Module32First(hModuleSnap, &me32)) {
+		CloseHandle(hModuleSnap);
+		return;
+	}
+	// 循环获取模块信息
+	do {
+		wprintf(L"模块名称:%S \t 模块基址:%08X\t 模块大小：%08X\n",
+			me32.szModule,me32.modBaseAddr, me32.modBaseSize);
+	} while (Module32Next(hModuleSnap, &me32));
+
+	// 关闭句柄并退出函数
+	CloseHandle(hModuleSnap);
+
+	return ;
+}
+
+VOID Debug::ShowMem(DWORD c_Address)
+{
+	//临时变量
+	SIZE_T size = {};
+	DWORD Oldproperty = {};
+
+	unsigned char l_Mem[16] = {};
+	//BYTE* l_Mem;
+	//修改调试进程内存属性 
+	if (!VirtualProtectEx(m_hProc, (LPVOID)c_Address, 1, PAGE_READWRITE, &Oldproperty)) {
+		PutsError("设置内存分页属性失败");
+		return ;
+	}
+
+	//读取第16个字节 保存起来
+	if (!ReadProcessMemory(m_hProc, (LPVOID)c_Address, &l_Mem, 16, &size)) {
+		PutsError("读取进程内存失败");
+		return ;
+	}
+	printf("%08X:\n", c_Address);
+	//单个字节输出信息
+	for(int i=0;i<16;i++)
+	{
+		printf("[%02d]%02X ",i, l_Mem[i]);
+		
+		if ((i+1)%8==0)
+			printf("\n");
+	}
+	printf("\n");
+	//把原来的内存属性还原回去
+	VirtualProtectEx(m_hProc, (LPVOID)c_Address, 1, Oldproperty, &Oldproperty);
+
+
 	return ;
 }
 

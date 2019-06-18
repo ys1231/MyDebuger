@@ -2,7 +2,7 @@
 #include"Debug.h"
 
 int main()
-{
+	{
 	char FilePath[MAX_PATH] ="../Release/test.exe";
 	Debug dbg;
 	if(!dbg.Open(FilePath))
