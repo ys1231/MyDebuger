@@ -25,14 +25,16 @@ NTSTATUS NTAPI MyNtQueryInformationProcess(
 	{
 	case 7:
 		ProcessInformation = 0;
-		break;
+		return 0;
+
 	case 0x1E :
 		ProcessInformation = 0;
-		break;
+		return 0;
+
 	case 0x1F:
 		*(DWORD*)ProcessInformation = 1;
 		return 0;
-		break;
+
 	}
 	//MessageBox(0, L"haha", L"0", 0);
 	WaitForSingleObject(g_hmutex, -1);

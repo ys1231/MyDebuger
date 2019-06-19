@@ -3,6 +3,9 @@
 #include <cstdio>
 #include "debugRegisters.h"
 #include <iostream>
+#include<atlstr.h>
+
+#include <DbgHelp.h>
 
 //1. 导入头文件
 #include "XEDParse/XEDParse.h"
@@ -19,8 +22,8 @@
 #include <TlHelp32.h>
 #include <winternl.h>
 #pragma comment(lib,"BeaEngine_4.1/Win32/Lib/BeaEngine.lib")
-
 #pragma comment(lib,"ntdll.lib")
+#pragma comment(lib,"dbghelp.dll")
 
 //初始化 静态成员变量
 MyContext Debug::m_Myct = {};
@@ -221,7 +224,13 @@ VOID Debug::WaitForEvent()
 				//DLL注入
 				DllInject();
 
+				//初始化符号
+				SymInitialize(m_hProcess, NULL, FALSE);
 
+				DWORD g_ImageBase = (DWORD)m_dbgEvent.u.CreateProcessInfo.lpBaseOfImage;//保存镜像基址
+				//DWORD g_OEP = (DWORD)m_dbgEvent.u.CreateProcessInfo.lpStartAddress;///保存程序OEP
+				//加载主程序模块符号信息
+				DWORD64 moduleAddress = SymLoadModule64(m_hProcess,m_dbgEvent.u.CreateProcessInfo.hFile, NULL, NULL, g_ImageBase, 0);
 				break;
 			case EXIT_THREAD_DEBUG_EVENT:
 				printf("线程退出\n");
@@ -235,6 +244,7 @@ VOID Debug::WaitForEvent()
 				}
 			case LOAD_DLL_DEBUG_EVENT:
 				printf("DLL加载\n");
+				SymLoadModule64(m_hProcess, m_dbgEvent.u.LoadDll.hFile, NULL, NULL, (DWORD64)m_dbgEvent.u.LoadDll.lpBaseOfDll, 0);
 				break;
 			case UNLOAD_DLL_DEBUG_EVENT:
 				printf("DLL卸载\n");
@@ -284,7 +294,6 @@ VOID Debug::FilterException()
 			IssystemBp = false;
 			printf("到达系统断点:%08X\n",(DWORD)m_ExcepInfo.ExceptionAddress);
 
-
 			//隐藏peb
 			PROCESS_BASIC_INFORMATION peb;
 
@@ -294,7 +303,11 @@ VOID Debug::FilterException()
 			DWORD pISdbg = ((DWORD)peb.PebBaseAddress + 0x2);
 			WriteProcessMemory(m_hProcess, (LPVOID)pISdbg, "\x0", 2, &dw);
 			
+			//显示帮助命令
 			GetHelp();
+
+			//加载插件
+			LoadPlugin();
 
 		}else
 		{
@@ -662,7 +675,8 @@ VOID Debug::GetCommand()
 			Analysis_Export_Import(Address,c_Len);
 		}else if(!_stricmp("plugin",cmd))
 		{
-			
+			FUN func = (FUN)m_FunAddress;
+			func();
 		}
 		else
 			printf("Input Error\n");
@@ -695,7 +709,7 @@ VOID Debug::GetHelp()
 	printf("xr:  修改寄存器\n");
 	printf("fmd: 查看模块信息\n");
 	printf("fpe: 地址 大小 查看PE信息\n");
-
+	printf("plugin: 使用插件");
 	return ;
 }
 
@@ -907,8 +921,6 @@ BOOL Debug::DllInject()
 
 VOID Debug::Analysis_Export_Import(DWORD c_Address, DWORD c_BaseSize)
 {
-	
-
 	//申请堆空间
 	m_pFile = new char[c_BaseSize]{};
 	SIZE_T dwdize=0;
@@ -938,6 +950,12 @@ VOID Debug::Analysis_Export_Import(DWORD c_Address, DWORD c_BaseSize)
 
 	//1.获取数据目录表第一个字段 得到导出表RVA
 	DWORD ExportDir = m_pNT->OptionalHeader.DataDirectory[0].VirtualAddress;
+
+	if (!ExportDir)
+	{
+		printf("没有导入表!");
+		return;
+	}
 
 	//2.获取导出表文件位置
 	PIMAGE_EXPORT_DIRECTORY l_pExport = (PIMAGE_EXPORT_DIRECTORY)(ExportDir+m_pFile);
@@ -1043,14 +1061,8 @@ VOID Debug::Analysis_Export_Import(DWORD c_Address, DWORD c_BaseSize)
 
 VOID Debug::LoadPlugin()
 {
-	//遍历指定文件夹
-
-
-	//加载指定名称函数
-
-
-	//保存到插件数组里面
-
+	
+	m_FunAddress =GetProcAddress(LoadLibraryA("Plugin/MainPlugin.dll"), "MainPlugin");
 
 	return ;
 }

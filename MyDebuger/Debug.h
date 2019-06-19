@@ -1,6 +1,7 @@
 #pragma once
 #include<Windows.h>
 #include <vector>
+#include <atlstr.h>
 
 
 // DR7寄存器结构体
@@ -49,6 +50,9 @@ typedef struct _MyContext{
 	DWORD Edi=0;
 }MyContext,PMyContext;
 
+
+//插件函数指针
+typedef void (*FUN)();
 
 //保存插件结构体
 typedef struct _Plugin{
@@ -131,7 +135,7 @@ public:
 	//保存NT头
 	PIMAGE_NT_HEADERS m_pNT;
 
-
+	LPVOID m_FunAddress = nullptr;
 public:
 
 	//1.检查是否获取管理员
@@ -192,6 +196,9 @@ public:
 
 	//初始化插件
 	VOID LoadPlugin();
+
+	//符号处理函数
+
 
 public:
 
