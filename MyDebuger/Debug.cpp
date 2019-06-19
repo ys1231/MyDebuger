@@ -249,9 +249,6 @@ VOID Debug::WaitForEvent()
 		//DBG_EXCEPTION_NOT_HANDLED
 		ContinueDebugEvent(m_dbgEvent.dwProcessId, m_dbgEvent.dwThreadId, m_ReplyInfo);
 
-
-		//再把断点设下去
-		//ReparSetBreak();
 	
 		//关闭打开的线程进程句柄
 		CloseHandle(m_hProc);
@@ -1850,6 +1847,7 @@ BOOL Debug::ClearBreak(DWORD c_Address)
 							}
 							iter = m_BreakPointAll.erase(iter);
 							printf("删除成功!\n");
+							return TRUE;
 						}
 
 						//CloseHandle(l_hThread);
@@ -1869,6 +1867,7 @@ BOOL Debug::ClearBreak(DWORD c_Address)
 					}
 					// 从动态数组里面删除
 					iter = m_BreakPointAll.erase(iter);
+					return TRUE;
 
 				}
 			}
