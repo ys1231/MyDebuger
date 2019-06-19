@@ -197,7 +197,13 @@ public:
 	//初始化插件
 	VOID LoadPlugin();
 
-	//符号处理函数
+	// 根据符号获取函数地址
+	SIZE_T GetSymAddress(HANDLE hProcess, const char* pszName);
+
+	// 根据地址获取函数名称
+
+	BOOL GetSymName(HANDLE hProcess, SIZE_T nAddress, CString& strName);
+
 
 
 public:

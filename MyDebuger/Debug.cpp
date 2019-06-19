@@ -3,9 +3,8 @@
 #include <cstdio>
 #include "debugRegisters.h"
 #include <iostream>
-#include<atlstr.h>
-
 #include <DbgHelp.h>
+#pragma comment(lib,"dbghelp.lib")
 
 //1. 导入头文件
 #include "XEDParse/XEDParse.h"
@@ -23,7 +22,8 @@
 #include <winternl.h>
 #pragma comment(lib,"BeaEngine_4.1/Win32/Lib/BeaEngine.lib")
 #pragma comment(lib,"ntdll.lib")
-#pragma comment(lib,"dbghelp.dll")
+
+
 
 //初始化 静态成员变量
 MyContext Debug::m_Myct = {};
@@ -220,6 +220,7 @@ VOID Debug::WaitForEvent()
 				printf("线程创建\n");
 				break;
 			case CREATE_PROCESS_DEBUG_EVENT:
+			{
 				printf("进程创建\n");
 				//DLL注入
 				DllInject();
@@ -230,8 +231,9 @@ VOID Debug::WaitForEvent()
 				DWORD g_ImageBase = (DWORD)m_dbgEvent.u.CreateProcessInfo.lpBaseOfImage;//保存镜像基址
 				//DWORD g_OEP = (DWORD)m_dbgEvent.u.CreateProcessInfo.lpStartAddress;///保存程序OEP
 				//加载主程序模块符号信息
-				DWORD64 moduleAddress = SymLoadModule64(m_hProcess,m_dbgEvent.u.CreateProcessInfo.hFile, NULL, NULL, g_ImageBase, 0);
-				break;
+				DWORD64 moduleAddress = SymLoadModule64(m_hProcess, m_dbgEvent.u.CreateProcessInfo.hFile, NULL, NULL, g_ImageBase, 0);
+				break; 
+			}
 			case EXIT_THREAD_DEBUG_EVENT:
 				printf("线程退出\n");
 				break;
@@ -243,9 +245,13 @@ VOID Debug::WaitForEvent()
 					goto EfNOP;
 				}
 			case LOAD_DLL_DEBUG_EVENT:
+			{
 				printf("DLL加载\n");
 				SymLoadModule64(m_hProcess, m_dbgEvent.u.LoadDll.hFile, NULL, NULL, (DWORD64)m_dbgEvent.u.LoadDll.lpBaseOfDll, 0);
 				break;
+
+				
+			}
 			case UNLOAD_DLL_DEBUG_EVENT:
 				printf("DLL卸载\n");
 				break;
@@ -308,6 +314,15 @@ VOID Debug::FilterException()
 
 			//加载插件
 			LoadPlugin();
+
+			//寻找Main函数  如果找到下一个断点
+
+			LPVOID MyMain=(LPVOID)GetSymAddress(m_hProcess, "main");
+
+			if (MyMain != 0) { //地址       一次性 不是条件断点
+				SetBreakInt3((DWORD)MyMain, FALSE, FALSE);
+			}
+
 
 		}else
 		{
@@ -455,7 +470,17 @@ VOID Debug::ShowAsm()
 			l_color = 0x7;
 
 		SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), l_color);
-		printf(" | %s\n", disasm.CompleteInstr);
+		printf(" | %s \t", disasm.CompleteInstr);
+
+		//获取符号信息
+		CString SymName = {};
+
+		GetSymName(m_hProcess, disasm.Instruction.AddrValue,SymName);
+
+		if (SymName != "") 
+			printf("\t\t\t| [ %s ]\n", SymName);
+		else
+			printf("\n");
 
 		//恢复原来的白色
 		SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), 0x7);
@@ -1065,6 +1090,35 @@ VOID Debug::LoadPlugin()
 	m_FunAddress =GetProcAddress(LoadLibraryA("Plugin/MainPlugin.dll"), "MainPlugin");
 
 	return ;
+}
+
+SIZE_T Debug::GetSymAddress(HANDLE hProcess, const char* pszName)
+{
+	char buffer[sizeof(SYMBOL_INFO) + MAX_SYM_NAME * sizeof(TCHAR)];
+	PSYMBOL_INFO pSymbol = (PSYMBOL_INFO)buffer;
+	pSymbol->SizeOfStruct = sizeof(SYMBOL_INFO);
+	pSymbol->MaxNameLen = MAX_SYM_NAME;
+
+	//根据名字查询符号信息,输出到pSymbol 中
+	if (!SymFromName(hProcess, pszName, pSymbol))
+		return 0;
+
+	return (SIZE_T)pSymbol->Address;//返回地址
+}
+
+BOOL Debug::GetSymName(HANDLE hProcess, SIZE_T nAddress, CString& strName)
+{
+	DWORD64 dwDisplacement = 0;
+	char buffer[sizeof(SYMBOL_INFO) + MAX_SYM_NAME * sizeof(TCHAR)];
+	PSYMBOL_INFO pSymbol = (PSYMBOL_INFO)buffer;
+	pSymbol->SizeOfStruct = sizeof(SYMBOL_INFO);
+	pSymbol->MaxNameLen = MAX_SYM_NAME;
+
+	if (!SymFromAddr(hProcess, nAddress, &dwDisplacement, pSymbol))
+		return FALSE;
+	strName = pSymbol->Name;
+
+	return TRUE;
 }
 
 VOID Debug::ShowMem(DWORD c_Address)
