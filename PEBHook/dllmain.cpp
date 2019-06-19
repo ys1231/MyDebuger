@@ -100,8 +100,7 @@ BOOL APIENTRY DllMain( HMODULE hModule,
     {
         //加载DLL
     case DLL_PROCESS_ATTACH:
-		g_Nt  = GetProcAddress(
-			LoadLibraryA("ntdll.dll"), "NtQueryInformationProcess");
+		g_Nt  = GetProcAddress(LoadLibraryA("ntdll.dll"), "NtQueryInformationProcess");
 
 		g_hmutex =  CreateMutex(NULL, FALSE,NULL);
 

@@ -50,13 +50,12 @@ typedef struct _MyContext{
 }MyContext,PMyContext;
 
 
-typedef VOID(*FUN)();
-
+//保存插件结构体
 typedef struct _Plugin{
 	
 	DWORD serial = 0;		//序号 第几个插件
 	char name[100] = {};	//插件名称
-	FUN func = NULL;		//指定类型函数指针
+	DWORD func = NULL;		//指定类型函数指针
 
 }Plugin,*PPlugin;
 
@@ -123,6 +122,16 @@ public:
 	//我是以什么方式打开的
 	BOOL IsOpera = TRUE;
 
+	//获取PE导出导入 信息
+	char* m_pFile = nullptr;
+
+	//获取DOS头
+	PIMAGE_DOS_HEADER m_pDos;
+
+	//保存NT头
+	PIMAGE_NT_HEADERS m_pNT;
+
+
 public:
 
 	//1.检查是否获取管理员
@@ -178,17 +187,11 @@ public:
 	//DLL远程线程注入
 	BOOL DllInject();
 
-	//获取PE导出导入 信息
-	char* m_pFile = nullptr;
-
-	//获取DOS头
-	PIMAGE_DOS_HEADER m_pDos;
-
-	//保存NT头
-	PIMAGE_NT_HEADERS m_pNT;
-
 	//解析导入导出表
 	VOID Analysis_Export_Import(DWORD c_Address, DWORD c_BaseSize);
+
+	//初始化插件
+	VOID LoadPlugin();
 
 public:
 

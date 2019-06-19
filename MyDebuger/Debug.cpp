@@ -660,6 +660,9 @@ VOID Debug::GetCommand()
 			GetModuleList();
 			scanf("%X %X", &Address, &c_Len);
 			Analysis_Export_Import(Address,c_Len);
+		}else if(!_stricmp("plugin",cmd))
+		{
+			
 		}
 		else
 			printf("Input Error\n");
@@ -741,7 +744,7 @@ VOID Debug::AlterMem(DWORD c_Address)
 	printf(":");
 	scanf("%X",&str);
 
-	//写入CC 下软件断点
+	//写
 	if (!WriteProcessMemory(m_hProc, (LPVOID)c_Address, &str, 1, &size)) {
 		PutsError("修改内存数据失败");
 
@@ -885,7 +888,7 @@ BOOL Debug::DllInject()
 	LPVOID pAddr = VirtualAllocEx(hProcess, NULL, 200, MEM_COMMIT, PAGE_READWRITE);
 
 	//3.在目标进程中写入dll路径
-	CHAR dllPath[] = "C:\\Users\\iyue\\Desktop\\测试\\test.dll";
+	CHAR dllPath[] = "test.dll";
 	SIZE_T dwSzie = 0;
 	WriteProcessMemory(hProcess, pAddr, dllPath, sizeof(dllPath), &dwSzie);
 
@@ -1034,6 +1037,20 @@ VOID Debug::Analysis_Export_Import(DWORD c_Address, DWORD c_BaseSize)
 
 	delete[] m_pFile;
 	m_pFile = nullptr;
+
+	return ;
+}
+
+VOID Debug::LoadPlugin()
+{
+	//遍历指定文件夹
+
+
+	//加载指定名称函数
+
+
+	//保存到插件数组里面
+
 
 	return ;
 }
