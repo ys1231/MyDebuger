@@ -3,17 +3,16 @@
 
 #include <iostream>
 
+int a = 9;
+int b = 2;
 int main()
 {
-	_asm int 3;
-			
+
 		for(int i=0;i<50;i++)
 		{
+			a = b + 8;
+			b = 10;
 			printf("helloworld\n");
 			
 		}
-
-	
-	_asm int 3;
-
 }

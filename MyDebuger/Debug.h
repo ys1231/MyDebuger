@@ -38,7 +38,6 @@ typedef struct _BreakPoint {
 	//是否是条件断点 
 	//如果是条件断点  判断一下 是否满足条件 如果满足条件 接收用户输入(把断点设置为失效) 不满足不接收
 	
-
 }BreakPoint,*PBreakPoint;
 
 typedef struct _MyContext{
@@ -49,6 +48,17 @@ typedef struct _MyContext{
 	DWORD Esi=0;
 	DWORD Edi=0;
 }MyContext,PMyContext;
+
+
+typedef VOID(*FUN)();
+
+typedef struct _Plugin{
+	
+	DWORD serial = 0;		//序号 第几个插件
+	char name[100] = {};	//插件名称
+	FUN func = NULL;		//指定类型函数指针
+
+}Plugin,*PPlugin;
 
 class Debug
 {
@@ -92,7 +102,6 @@ public:
 	//用于保存自己下的软件断点 int3
 	std::vector<BreakPoint>m_BreakPointAll;
 
-
 	//设置执行条件断点所需的 数据
 	DWORD IsConDiTion = 0;
 
@@ -105,6 +114,15 @@ public:
 	//保存用户输入的是哪个寄存器
 	static char m_str[10];
 
+	//如果是以附加的方式打开 这就是我的ID
+	DWORD m_iard = 0;
+
+	//被调试进程句柄
+	HANDLE m_hProcess = NULL;
+
+	//我是以什么方式打开的
+	BOOL IsOpera = TRUE;
+
 public:
 
 	//1.检查是否获取管理员
@@ -115,6 +133,8 @@ public:
 
 	//3.打开以调试的方式打开进程
 	BOOL Open(char FilePath[]);
+
+	BOOL Open(DWORD Pid);
 
 	//4.等待异常事件产生
 	VOID WaitForEvent();	
@@ -155,8 +175,20 @@ public:
 	//遍历模块信息
 	VOID GetModuleList();
 
+	//DLL远程线程注入
+	BOOL DllInject();
+
+	//获取PE导出导入 信息
+	char* m_pFile = nullptr;
+
+	//获取DOS头
+	PIMAGE_DOS_HEADER m_pDos;
+
+	//保存NT头
+	PIMAGE_NT_HEADERS m_pNT;
+
 	//解析导入导出表
-	VOID Analysis_Export_Import();
+	VOID Analysis_Export_Import(DWORD c_Address, DWORD c_BaseSize);
 
 public:
 

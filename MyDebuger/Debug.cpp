@@ -17,8 +17,10 @@
 #define BEA_USE_STDCALL
 #include"BeaEngine_4.1/Win32/headers/BeaEngine.h"
 #include <TlHelp32.h>
+#include <winternl.h>
 #pragma comment(lib,"BeaEngine_4.1/Win32/Lib/BeaEngine.lib")
 
+#pragma comment(lib,"ntdll.lib")
 
 //初始化 静态成员变量
 MyContext Debug::m_Myct = {};
@@ -54,8 +56,8 @@ char* GetError()
 
 Debug::Debug()
 {
-	//PrintIcon();
-	//PromotionDebugPrivilege(TRUE);
+	PrintIcon();
+	PromotionDebugPrivilege(TRUE);
 }
 
 Debug::~Debug()
@@ -129,8 +131,8 @@ void Debug::PrintIcon()
 		else
 			MessageBoxW(0, L"??????", L"提示", 0);
 	}
-	else
-		MessageBoxW(0, L"Admin", L"提示", 0);
+	//else
+		//MessageBoxW(0, L"Admin", L"提示", 0);
 
 }
 
@@ -155,6 +157,9 @@ BOOL Debug::PromotionDebugPrivilege(BOOL fEnable)
 
 BOOL Debug::Open(char FilePath[])
 {
+	//说明是以创建进程的方式打开的
+	IsOpera = TRUE;
+
 	//接收创建进程的信息
 	STARTUPINFO si = { sizeof(STARTUPINFO) };
 	PROCESS_INFORMATION pi = { 0 };
@@ -169,9 +174,18 @@ BOOL Debug::Open(char FilePath[])
 		MessageBox(0, "创建进程失败!", "错误提示", 0);
 		return FALSE;
 	}
-
+	m_hProcess = pi.hProcess;
 
 	return TRUE;
+}
+
+BOOL Debug::Open(DWORD Pid)
+{
+	//保存Pid给 注入使用
+	m_iard = Pid;
+
+	IsOpera = FALSE;
+	return DebugActiveProcess(Pid);
 }
 
 VOID Debug::WaitForEvent()
@@ -204,6 +218,10 @@ VOID Debug::WaitForEvent()
 				break;
 			case CREATE_PROCESS_DEBUG_EVENT:
 				printf("进程创建\n");
+				//DLL注入
+				DllInject();
+
+
 				break;
 			case EXIT_THREAD_DEBUG_EVENT:
 				printf("线程退出\n");
@@ -217,7 +235,6 @@ VOID Debug::WaitForEvent()
 				}
 			case LOAD_DLL_DEBUG_EVENT:
 				printf("DLL加载\n");
-				//m_dbgEvent;
 				break;
 			case UNLOAD_DLL_DEBUG_EVENT:
 				printf("DLL卸载\n");
@@ -269,7 +286,19 @@ VOID Debug::FilterException()
 		{
 			IssystemBp = false;
 			printf("到达系统断点:%08X\n",(DWORD)m_ExcepInfo.ExceptionAddress);
+
+
+			//隐藏peb
+			PROCESS_BASIC_INFORMATION peb;
+
+			DWORD dw;
+			NtQueryInformationProcess(m_hProcess, ProcessBasicInformation, &peb, sizeof(peb), &dw);
+
+			DWORD pISdbg = ((DWORD)peb.PebBaseAddress + 0x2);
+			WriteProcessMemory(m_hProcess, (LPVOID)pISdbg, "\x0", 2, &dw);
+			
 			GetHelp();
+
 		}else
 		{
 			//确认是否是我们自己下的断点 
@@ -307,7 +336,11 @@ VOID Debug::FilterException()
 		}
 		else
 			IsTF = FALSE;
-
+		if (IsRepar && IsHPBreak) {
+			ReparSetBreak();
+			IsInputAndShowAsm = TRUE;
+			IsRepar = FALSE;
+		}
 		break;
 	}
 		//访问没有权限的虚拟地址 内存断点
@@ -611,20 +644,25 @@ VOID Debug::GetCommand()
 			scanf("%X", &Address);
 			AlterMem(Address);
 			ShowAsm();
-		}else if(!_stricmp("fz",cmd))
+		}else if(!_stricmp("fz",cmd))  //查看内存
 		{
 			scanf("%d", &c_Len);
 			ShowStack(c_Len);
-		}else if(!_stricmp("xr",cmd))
+		}else if(!_stricmp("xr",cmd))  //修改寄存器
 		{
 			AlterRegister();
 			ShowAsm();
-		}else if(!_stricmp("fmd",cmd))
+		}else if(!_stricmp("fmd",cmd))	//查看模块
 		{
 			GetModuleList();
-		}else if(!_stricmp("h",cmd))
+		}else if(!_stricmp("h",cmd))	//查看帮助
 		{
 			GetHelp();
+		}else if(!_stricmp("fpe",cmd))  //查看PE信息
+		{
+			GetModuleList();
+			scanf("%X %X", &Address, &c_Len);
+			Analysis_Export_Import(Address,c_Len);
 		}
 		else
 			printf("Input Error\n");
@@ -656,6 +694,7 @@ VOID Debug::GetHelp()
 	printf("fz:  (n)查看栈\n");
 	printf("xr:  修改寄存器\n");
 	printf("fmd: 查看模块信息\n");
+	printf("fpe: 地址 大小 查看PE信息\n");
 
 	return ;
 }
@@ -831,10 +870,173 @@ VOID Debug::GetModuleList()
 	return ;
 }
 
-VOID Debug::Analysis_Export_Import()
+BOOL Debug::DllInject()
 {
 
+	HANDLE hProcess = NULL;
 
+	//判断是以什么方式打开的句柄
+	if (IsOpera) {
+		hProcess = m_hProcess;
+	}
+	else {
+		//1.打开进程
+		hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, m_iard);
+		m_hProcess = hProcess;
+	}
+	//2.在目标进程中申请空间
+	LPVOID pAddr = VirtualAllocEx(hProcess, NULL, 200, MEM_COMMIT, PAGE_READWRITE);
+
+	//3.在目标进程中写入dll路径
+	CHAR dllPath[] = "C:\\Users\\iyue\\Desktop\\测试\\test.dll";
+	SIZE_T dwSzie = 0;
+	WriteProcessMemory(hProcess, pAddr, dllPath, sizeof(dllPath), &dwSzie);
+
+	//4.创建远程线程，注入dll
+	HANDLE hThread = CreateRemoteThread(hProcess, NULL, NULL,
+		(LPTHREAD_START_ROUTINE)LoadLibrary,
+		pAddr,
+		NULL, NULL);
+
+	//5.关闭句柄，释放空间
+	//WaitForSingleObject(hThread, -1);
+	CloseHandle(hThread);
+
+	return 0;
+}
+
+VOID Debug::Analysis_Export_Import(DWORD c_Address, DWORD c_BaseSize)
+{
+	
+
+	//申请堆空间
+	m_pFile = new char[c_BaseSize]{};
+	SIZE_T dwdize=0;
+	DWORD dwold=0;
+
+	if(!VirtualProtectEx(m_hProcess,(LPVOID)c_Address, c_BaseSize,PAGE_EXECUTE_READWRITE,&dwold))
+	{
+		PutsError("修改内存属性出错")
+	}
+
+	if(!ReadProcessMemory(m_hProcess, (LPVOID)c_Address, m_pFile, c_BaseSize,&dwdize))
+	{
+		PutsError("读取内存出错");
+	}
+
+	if(!VirtualProtectEx(m_hProcess, (LPVOID)c_Address, c_BaseSize, dwold, &dwold))
+	{
+		PutsError("修改内存属性出错")
+	}
+
+
+	m_pDos = (PIMAGE_DOS_HEADER)m_pFile;
+	m_pNT = (PIMAGE_NT_HEADERS)(m_pDos->e_lfanew + m_pFile);
+
+
+	printf("导出表\n");
+
+	//1.获取数据目录表第一个字段 得到导出表RVA
+	DWORD ExportDir = m_pNT->OptionalHeader.DataDirectory[0].VirtualAddress;
+
+	//2.获取导出表文件位置
+	PIMAGE_EXPORT_DIRECTORY l_pExport = (PIMAGE_EXPORT_DIRECTORY)(ExportDir+m_pFile);
+
+	//3.获取PE文件名称
+	printf("%s\n", (char*)(l_pExport->Name + m_pFile));
+
+	//4.获取序号基数
+	printf("序号基数:%08x\n", l_pExport->Base);
+
+	//5.遍历输出所有导出函数
+
+	//5.1导出函数总个数
+	DWORD FunLen = l_pExport->NumberOfFunctions;
+
+	//5.2导出函数名称个数
+	DWORD NameFunLen = l_pExport->NumberOfNames;
+
+	//6.获取三个函数地址表地址
+	PDWORD pFunAddress = (PDWORD)(l_pExport->AddressOfFunctions + m_pFile);
+	PDWORD pFunName = (PDWORD)(l_pExport->AddressOfNames + m_pFile);
+	PWORD  pOrdinals = (PWORD)(l_pExport->AddressOfNameOrdinals + m_pFile);
+
+	//遍历输出所有导出函数
+
+	for (int i = 0; i < FunLen; i++)
+	{
+		//如果函数地址为0 说明函数地址无效 寻找下一个
+		if (pFunAddress[i] == 0)
+			continue;
+
+		printf("函数序号:%d\t", i + l_pExport->Base);
+
+		bool Flag = false;
+		for (int j = 0; j < NameFunLen; j++)
+		{
+			if (pOrdinals[j] == i)
+			{
+				printf("函数名称:%s\t", (char*)(pFunName[j] + m_pFile));
+				Flag = true;
+			}
+
+		}
+		if (!Flag)
+			printf("函数名称:没有\t");
+
+		printf("函数地址:%08x\n",(pFunAddress[i] + m_pFile));
+
+	}
+
+	printf("导入表\n");
+	//1.获取数据目录表第二个字段 得到导入表RVA
+	DWORD ImportDir = m_pNT->OptionalHeader.DataDirectory[1].VirtualAddress;
+
+	if(!ImportDir)
+	{
+		printf("没有导入表!");
+		return ;
+	}
+
+	//2.获取导入表文件位置
+	PIMAGE_IMPORT_DESCRIPTOR l_pImport = (PIMAGE_IMPORT_DESCRIPTOR)(ImportDir + m_pFile);
+
+	//遍历导入表和 里面的函数
+	while (l_pImport->Name)
+	{
+		//打印模块名
+		printf("\n\t\t模块名称:%s\n", (char*)(l_pImport->Name + m_pFile));
+
+		//遍历导入函数
+		PIMAGE_THUNK_DATA l_pThunk = (PIMAGE_THUNK_DATA)(l_pImport->OriginalFirstThunk + m_pFile);
+
+		while (l_pThunk->u1.AddressOfData)
+		{
+			//判断导入方式   (最高位是否为1 )1 是序号导入 0是函数名导入
+			if (IMAGE_SNAP_BY_ORDINAL(l_pThunk->u1.AddressOfData))
+			{
+				//序号是 l_pThunk->ul.Ordinal 
+				printf("\t导入函数名称:[NULL]\t导入函数序号:%d\n", l_pThunk->u1.Ordinal && 0xFFFF);
+			}
+			else
+			{
+				//名称导入 
+				PIMAGE_IMPORT_BY_NAME pName = (PIMAGE_IMPORT_BY_NAME)(l_pThunk->u1.AddressOfData + m_pFile);
+
+				printf("\t导入函数名称:[%s]\t导入函数序号:%d\n", pName->Name, pName->Hint);
+			}
+
+			//下一个函数
+			l_pThunk++;
+		}
+
+		//下一个导入结构
+		l_pImport++;
+	}
+
+
+	delete[] m_pFile;
+	m_pFile = nullptr;
 
 	return ;
 }
@@ -1252,7 +1454,7 @@ BOOL Debug::SetBreakHD(DWORD c_Address, DWORD c_Type, DWORD c_Len)
 {
 	
 	//对断点长度进行处理
-	if(c_Len==1)
+	if(c_Len==1)	
 	{
 		c_Address -= c_Address % 2;
 	}else if(c_Len==3)
@@ -1395,15 +1597,15 @@ BOOL Debug::SetMemBreak(DWORD c_Address,char str[])
 	DWORD c_Type = PAGE_NOACCESS;
 
 	if (!_stricmp(str, "-x")) {
-		c_Type = PAGE_EXECUTE;
+		c_Type = PAGE_READWRITE;
 	}
 	else if (!_stricmp(str, "-r"))
 	{
-		c_Type = PAGE_READONLY;
+		c_Type = PAGE_EXECUTE_WRITECOPY;
 	}
 	else if (!_stricmp(str, "-w"))
 	{
-		c_Type = PAGE_READWRITE;
+		c_Type = PAGE_EXECUTE_READ;
 	}
 	else {
 		c_Type = PAGE_NOACCESS;
