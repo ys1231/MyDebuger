@@ -561,6 +561,16 @@ VOID Debug::ShowAsm(DWORD c_Address, DWORD c_Len)
 		SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), l_color);
 		printf(" | %s\n", disasm.CompleteInstr);
 
+		//获取符号信息
+		CString SymName = {};
+
+		GetSymName(m_hProcess, disasm.Instruction.AddrValue, SymName);
+
+		if (SymName != "")
+			printf("\t\t\t| [ %s ]\n", SymName);
+		else
+			printf("\n");
+
 		//恢复原来的白色
 		SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), 0x7);
 
@@ -631,11 +641,13 @@ VOID Debug::GetCommand()
 			}else if(!_stricmp(str, "-r"))
 			{
 				c_Type = 1; 
+				printf("请输入长度:");
 				scanf("%d", &c_Len);
 			}
 			else if (!_stricmp(str, "-w"))
 			{
 				c_Type = 3; 
+				printf("请输入长度:");
 				scanf("%d", &c_Len);
 			}
 			else {
@@ -722,9 +734,10 @@ VOID Debug::GetHelp()
 	printf("g:   继续执行\n");
 	printf("cls: 清屏\n");
 	printf("fasm:地址 查看指定地址汇编信息\n");
-	printf("bp:   软件断点|| 条件断点 (1) \n");
-	printf("hp:   -x|-r n |-w n 执行 读|写\n");
-	printf("np:   -x|-r |-w  内存断点\n");
+	printf("bp:  软件断点|| 条件断点 \n");
+	printf("bpt: 条件断点 (1) \n");
+	printf("hp:  -x|-r n |-w n 执行 读|写\n");
+	printf("np:  -x|-r |-w  内存断点\n");
 	printf("fp:  查看所有断点\n");
 	printf("dp:  地址 删除指定断点和查看配合使用\n");
 	printf("xasm:修改汇编代码\n");
@@ -1337,7 +1350,7 @@ BOOL Debug::SetBreakInt3(DWORD c_Address,bool c_Execute, bool c_CondiTion)
 			
 			DWORD l_dword = 0;
 
-			printf("Input Addres|n\n:");
+			printf("Input E??|n\n:");
 		aaa:
 			scanf("%s%d", m_str, &l_dword);
 

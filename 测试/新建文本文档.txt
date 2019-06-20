@@ -1,0 +1,76 @@
+ClearVS(CString* Path)
+{
+
+	setlocale(LC_ALL, "chs");//注意系统信息中需要输出中文的地方需要使用该函数
+	HANDLE hFind;
+	WIN32_FIND_DATA w32FileData;
+
+	CString FilePath = *Path;
+	FilePath += L"*";
+	CString FileTemp = *Path;
+
+	hFind = FindFirstFile(FilePath, &w32FileData);
+	//如果没有找到直接退出
+	if (hFind == (HANDLE)-1) 
+		return FALSE;
+
+	do {
+		if (!wcscmp(w32FileData.cFileName, L".") || !wcscmp(w32FileData.cFileName, L".."))//避免遍历隐藏的本目录路径以及父目录路径
+			continue;
+		//判断是否是文件夹
+		if (w32FileData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+		{
+			CString FilePathNext = {};
+
+			FilePathNext = FileTemp;
+
+			FilePathNext += w32FileData.cFileName;
+			FilePathNext += L"\\";
+
+			//递归遍历下一个文件夹
+			ClearVS(&FilePathNext);//坑
+
+			FilePathNext.Empty();
+		}
+		else
+		{
+			CString FileName = {};
+			CString str = {};
+			FileName = FileTemp;
+
+			//把文件名追加到文件夹上
+			FileName += w32FileData.cFileName;
+
+			LPWSTR FileSuffix = PathFindExtension(FileName);
+			if (!lstrcmp(FileSuffix, L".tlog") || !lstrcmp(FileSuffix, L".obj") || !lstrcmp(FileSuffix, L".log")
+				|| !lstrcmp(FileSuffix, L".pch") || !lstrcmp(FileSuffix, L".ilk")
+				|| !lstrcmp(FileSuffix, L".pdb") || !lstrcmp(FileSuffix, L".idb"))
+			{
+				if (DeleteFile(FileName))
+				{
+					str.Format(L"%s删除成功\r\n\r\n", w32FileData.cFileName);
+					m_VS_Clear += str;
+
+				}
+				else
+				{
+					str.Format(L"%s删除失败文件被占用或者无权限\r\n\r\n", w32FileData.cFileName);
+					m_VS_Clear += str;	
+				}
+				UpdateData(FALSE);
+			}
+			else
+				m_VS_Clear += L"当前目录没有匹配的文件\r\n\r\n";
+
+			str.Empty();
+			FileName.Empty();
+		}
+	} while (FindNextFile(hFind, &w32FileData));
+
+	//回收资源
+	FilePath.Empty();
+	FileTemp.Empty();
+
+
+	return TRUE;
+}
