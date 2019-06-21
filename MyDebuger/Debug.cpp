@@ -991,7 +991,7 @@ VOID Debug::Analysis_Export_Import(DWORD c_Address, DWORD c_BaseSize)
 
 	if (!ExportDir)
 	{
-		printf("没有导入表!");
+		printf("没有导入表!\n");
 	}
 	else {
 
@@ -1050,7 +1050,7 @@ VOID Debug::Analysis_Export_Import(DWORD c_Address, DWORD c_BaseSize)
 
 	if(!ImportDir)
 	{
-		printf("没有导入表!");
+		printf("没有导入表!\n");
 		
 	}
 	else {
