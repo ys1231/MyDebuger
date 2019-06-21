@@ -9,6 +9,8 @@ int main(){
 
 	Debug dbg;
 
+	
+
 	if (iard==1) {
 
 		char FilePath[MAX_PATH] ={};
@@ -19,7 +21,8 @@ int main(){
 		{
 			return 0;
 		}
-
+		/*DWORD Address =(DWORD)GetModuleHandleA("测试程序.exe");
+		printf("%X", Address);*/
 	}else
 	{
 		printf(":");

@@ -992,58 +992,58 @@ VOID Debug::Analysis_Export_Import(DWORD c_Address, DWORD c_BaseSize)
 	if (!ExportDir)
 	{
 		printf("没有导入表!");
-		return;
 	}
+	else {
 
-	//2.获取导出表文件位置
-	PIMAGE_EXPORT_DIRECTORY l_pExport = (PIMAGE_EXPORT_DIRECTORY)(ExportDir+m_pFile);
+		//2.获取导出表文件位置
+		PIMAGE_EXPORT_DIRECTORY l_pExport = (PIMAGE_EXPORT_DIRECTORY)(ExportDir + m_pFile);
 
-	//3.获取PE文件名称
-	printf("%s\n", (char*)(l_pExport->Name + m_pFile));
+		//3.获取PE文件名称
+		printf("%s\n", (char*)(l_pExport->Name + m_pFile));
 
-	//4.获取序号基数
-	printf("序号基数:%08x\n", l_pExport->Base);
+		//4.获取序号基数
+		printf("序号基数:%08x\n", l_pExport->Base);
 
-	//5.遍历输出所有导出函数
+		//5.遍历输出所有导出函数
 
-	//5.1导出函数总个数
-	DWORD FunLen = l_pExport->NumberOfFunctions;
+		//5.1导出函数总个数
+		DWORD FunLen = l_pExport->NumberOfFunctions;
 
-	//5.2导出函数名称个数
-	DWORD NameFunLen = l_pExport->NumberOfNames;
+		//5.2导出函数名称个数
+		DWORD NameFunLen = l_pExport->NumberOfNames;
 
-	//6.获取三个函数地址表地址
-	PDWORD pFunAddress = (PDWORD)(l_pExport->AddressOfFunctions + m_pFile);
-	PDWORD pFunName = (PDWORD)(l_pExport->AddressOfNames + m_pFile);
-	PWORD  pOrdinals = (PWORD)(l_pExport->AddressOfNameOrdinals + m_pFile);
+		//6.获取三个函数地址表地址
+		PDWORD pFunAddress = (PDWORD)(l_pExport->AddressOfFunctions + m_pFile);
+		PDWORD pFunName = (PDWORD)(l_pExport->AddressOfNames + m_pFile);
+		PWORD  pOrdinals = (PWORD)(l_pExport->AddressOfNameOrdinals + m_pFile);
 
-	//遍历输出所有导出函数
+		//遍历输出所有导出函数
 
-	for (int i = 0; i < FunLen; i++)
-	{
-		//如果函数地址为0 说明函数地址无效 寻找下一个
-		if (pFunAddress[i] == 0)
-			continue;
-
-		printf("函数序号:%d\t", i + l_pExport->Base);
-
-		bool Flag = false;
-		for (int j = 0; j < NameFunLen; j++)
+		for (int i = 0; i < FunLen; i++)
 		{
-			if (pOrdinals[j] == i)
+			//如果函数地址为0 说明函数地址无效 寻找下一个
+			if (pFunAddress[i] == 0)
+				continue;
+
+			printf("函数序号:%d\t", i + l_pExport->Base);
+
+			bool Flag = false;
+			for (int j = 0; j < NameFunLen; j++)
 			{
-				printf("函数名称:%s\t", (char*)(pFunName[j] + m_pFile));
-				Flag = true;
+				if (pOrdinals[j] == i)
+				{
+					printf("函数名称:%s\t", (char*)(pFunName[j] + m_pFile));
+					Flag = true;
+				}
+
 			}
+			if (!Flag)
+				printf("函数名称:没有\t");
+
+			printf("函数地址:%08x\n", (pFunAddress[i] + m_pFile));
 
 		}
-		if (!Flag)
-			printf("函数名称:没有\t");
-
-		printf("函数地址:%08x\n",(pFunAddress[i] + m_pFile));
-
 	}
-
 	printf("导入表\n");
 	//1.获取数据目录表第二个字段 得到导入表RVA
 	DWORD ImportDir = m_pNT->OptionalHeader.DataDirectory[1].VirtualAddress;
@@ -1051,46 +1051,47 @@ VOID Debug::Analysis_Export_Import(DWORD c_Address, DWORD c_BaseSize)
 	if(!ImportDir)
 	{
 		printf("没有导入表!");
-		return ;
+		
 	}
+	else {
 
-	//2.获取导入表文件位置
-	PIMAGE_IMPORT_DESCRIPTOR l_pImport = (PIMAGE_IMPORT_DESCRIPTOR)(ImportDir + m_pFile);
+		//2.获取导入表文件位置
+		PIMAGE_IMPORT_DESCRIPTOR l_pImport = (PIMAGE_IMPORT_DESCRIPTOR)(ImportDir + m_pFile);
 
-	//遍历导入表和 里面的函数
-	while (l_pImport->Name)
-	{
-		//打印模块名
-		printf("\n\t\t模块名称:%s\n", (char*)(l_pImport->Name + m_pFile));
-
-		//遍历导入函数
-		PIMAGE_THUNK_DATA l_pThunk = (PIMAGE_THUNK_DATA)(l_pImport->OriginalFirstThunk + m_pFile);
-
-		while (l_pThunk->u1.AddressOfData)
+		//遍历导入表和 里面的函数
+		while (l_pImport->Name)
 		{
-			//判断导入方式   (最高位是否为1 )1 是序号导入 0是函数名导入
-			if (IMAGE_SNAP_BY_ORDINAL(l_pThunk->u1.AddressOfData))
-			{
-				//序号是 l_pThunk->ul.Ordinal 
-				printf("\t导入函数名称:[NULL]\t导入函数序号:%d\n", l_pThunk->u1.Ordinal && 0xFFFF);
-			}
-			else
-			{
-				//名称导入 
-				PIMAGE_IMPORT_BY_NAME pName = (PIMAGE_IMPORT_BY_NAME)(l_pThunk->u1.AddressOfData + m_pFile);
+			//打印模块名
+			printf("\n\t\t模块名称:%s\n", (char*)(l_pImport->Name + m_pFile));
 
-				printf("\t导入函数名称:[%s]\t导入函数序号:%d\n", pName->Name, pName->Hint);
+			//遍历导入函数
+			PIMAGE_THUNK_DATA l_pThunk = (PIMAGE_THUNK_DATA)(l_pImport->OriginalFirstThunk + m_pFile);
+
+			while (l_pThunk->u1.AddressOfData)
+			{
+				//判断导入方式   (最高位是否为1 )1 是序号导入 0是函数名导入
+				if (IMAGE_SNAP_BY_ORDINAL(l_pThunk->u1.AddressOfData))
+				{
+					//序号是 l_pThunk->ul.Ordinal 
+					printf("\t导入函数名称:[NULL]\t导入函数序号:%d\n", l_pThunk->u1.Ordinal && 0xFFFF);
+				}
+				else
+				{
+					//名称导入 
+					PIMAGE_IMPORT_BY_NAME pName = (PIMAGE_IMPORT_BY_NAME)(l_pThunk->u1.AddressOfData + m_pFile);
+
+					printf("\t导入函数名称:[%s]\t导入函数序号:%d\n", pName->Name, pName->Hint);
+				}
+
+				//下一个函数
+				l_pThunk++;
 			}
 
-			//下一个函数
-			l_pThunk++;
+			//下一个导入结构
+			l_pImport++;
 		}
-
-		//下一个导入结构
-		l_pImport++;
 	}
-
-
+	
 	delete[] m_pFile;
 	m_pFile = nullptr;
 
